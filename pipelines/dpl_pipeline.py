@@ -33,6 +33,9 @@ from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 
 
+from torch.cuda.amp import GradScaler as GradScaler
+from torch.cuda.amp import autocast as autocast
+
 logger = logging.get_logger(__name__)  
 
 
@@ -748,40 +751,44 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                 with torch.enable_grad():
                     
                     cond_optim = torch.optim.AdamW(self.text_encoder.get_input_embeddings().parameters())
+                    scaler = GradScaler()
                     for j in range(attn_inner_steps):
-                        encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float32)
-                        noise_pred = self.unet(latents,
-                                            t,
-                                            encoder_hidden_states=encoder_hidden_states,
-                                            cross_attention_kwargs=cross_attention_kwargs,
-                                            ).sample
-                        self.unet.zero_grad()
-                        
-                        max_attention_per_index, attention_maps = self._aggregate_and_get_max_attention_per_token(
-                                                                                    indices=token_indices,
-                                                                                    smooth_op=smooth_op,
-                                                                                    softmax_op=softmax_op)
+                        cond_optim.zero_grad()
+                        with autocast():
+                            #float 16
+                            #encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float16)
+                            encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float32)
+                            noise_pred = self.unet(latents,
+                                                t,
+                                                encoder_hidden_states=encoder_hidden_states,
+                                                cross_attention_kwargs=cross_attention_kwargs,
+                                                ).sample
+                            self.unet.zero_grad()
+                            
+                            max_attention_per_index, attention_maps = self._aggregate_and_get_max_attention_per_token(
+                                                                                        indices=token_indices,
+                                                                                        smooth_op=smooth_op,
+                                                                                        softmax_op=softmax_op)
 
-                        
-                        if lam_maxattn>0:
-                            loss_max = self._compute_loss(max_attention_per_index, loss_type=loss_type)
-                        else:
-                            loss_max = torch.Tensor([0.0]).cuda()
-                        
-                        if i >= max_iter_to_alter and lam_entropy>0:
                             
+                            if lam_maxattn>0:
+                                loss_max = self._compute_loss(max_attention_per_index, loss_type=loss_type)
+                            else:
+                                loss_max = torch.Tensor([0.0]).cuda()
                             
-                            BG_loss = self._compute_BG(attention_maps, indices_to_alter, BG_maps)
-                        else:
-                            BG_loss = torch.Tensor([0.0]).cuda()
-                        
-                        if lam_cosine>0:
-                            cosine_loss = self._compute_cosine(attention_maps, indices_to_alter)
-                        else:  
-                            cosine_loss = torch.Tensor([0.0]).cuda()
+                            if i >= max_iter_to_alter and lam_entropy>0:
+                                
+                                BG_loss = self._compute_BG(attention_maps, indices_to_alter, BG_maps)
+                            else:
+                                BG_loss = torch.Tensor([0.0]).cuda()
                             
-                        loss = loss_max* lam_maxattn+ BG_loss* lam_entropy \
-                                    + cosine_loss * lam_cosine 
+                            if lam_cosine>0:
+                                cosine_loss = self._compute_cosine(attention_maps, indices_to_alter)
+                            else:  
+                                cosine_loss = torch.Tensor([0.0]).cuda()
+                                
+                            loss = loss_max* lam_maxattn+ BG_loss* lam_entropy \
+                                        + cosine_loss * lam_cosine 
 
                         print_string = f"Step {i}, Attend {j} | Loss: {loss.item():0.6f}, " +\
                                                         f"max: {loss_max.item():0.6f}," + \
@@ -798,8 +805,10 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                             break
 
                         loss.backward(retain_graph=False)
+                        
                         cond_optim.step()
-                        cond_optim.zero_grad()
+                        
+                        
                         with torch.no_grad():
                             self.text_encoder.get_input_embeddings().weight[index_no_updates] = orig_embeds_params[index_no_updates]
                             
@@ -828,7 +837,7 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                 cond_embeddings = cond_embeddings.detach().clone().requires_grad_(False)
                 opt = torch.optim.Adam([uncond_embeddings], lr=1e-2 * (1. - i / 100.))
                 
-                with torch.enable_grad():
+                with torch.enable_grad():lo
                     for j in range(null_inner_steps):
                         context=torch.cat([uncond_embeddings, cond_embeddings])
                         self.unet.zero_grad()
@@ -987,6 +996,8 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                 for ind in range(len(placeholder_token_id)):
                     token_embeds[placeholder_token_id[ind]] = cond_embeddings_list[i][ind]
                 
+                #float 16
+                #encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float16)
                 encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float32)
                 
                 prompt_embeds = torch.cat([uncond_embeddings_list[i].cuda(), encoder_hidden_states.cuda()])

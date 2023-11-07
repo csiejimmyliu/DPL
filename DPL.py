@@ -82,7 +82,10 @@ def arguments():
 
 if __name__=="__main__":
     args = arguments()
-    torch_dtype = torch.float32
+    if args.use_float_16:
+        torch_dtype = torch.float16
+    else:
+        torch_dtype = torch.float32
     sd_model_ckpt = args.model_path
     
     postfix = f'{args.lam_maxattn}_{args.lam_entropy}_{args.lam_cosine}' + \
@@ -99,11 +102,21 @@ if __name__=="__main__":
     os.makedirs(os.path.join(args.results_folder, 
                              f"embed_list_{postfix}"), 
                              exist_ok=True)
-    
-    pipeline = StableDiffusion_MyPipeline.from_pretrained(
+    if args.use_float_16:
+        pipeline = StableDiffusion_MyPipeline.from_pretrained(
         sd_model_ckpt,
         torch_dtype=torch_dtype,
-    )
+        revision="fp16",
+        )
+        
+    else:
+        pipeline = StableDiffusion_MyPipeline.from_pretrained(
+        sd_model_ckpt,
+        torch_dtype=torch_dtype,
+        )
+
+
+    pipeline.enable_xformers_memory_efficient_attention()
     
     
     tokenizer = pipeline.tokenizer

@@ -522,11 +522,11 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
 
             cross_att_count += 1
             attn_procs[name] = AttendExciteCrossAttnProcessor(
-                attnstore=self.attention_store, place_in_unet=place_in_unet
+                attnstore=self.pipeline_attention_store, place_in_unet=place_in_unet
             )
 
         self.unet.set_attn_processor(attn_procs)
-        self.attention_store.num_att_layers = cross_att_count
+        self.pipeline_attention_store.num_att_layers = cross_att_count
 
     @staticmethod
     def _compute_loss(max_attention_per_index: List[torch.Tensor], loss_type = 'max') -> torch.Tensor:
@@ -564,7 +564,7 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
         softmax_op = True,
     ):
         """Aggregates the attention for each token and computes the max activation value for each token to alter."""
-        attention_maps = self.attention_store.aggregate_attention(
+        attention_maps = self.pipeline_attention_store.aggregate_attention(
             from_where=("up", "down", "mid"),
         )
         
@@ -718,7 +718,7 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
         self.unet = prepare_unet(self.unet)
 
         
-        self.attention_store = AttentionStore(attn_res=attn_res)
+        self.pipeline_attention_store = AttentionStore(attn_res=attn_res)
         self.register_attention_control()
 
         orig_embeds_params = (self.text_encoder).get_input_embeddings().weight.data.clone()

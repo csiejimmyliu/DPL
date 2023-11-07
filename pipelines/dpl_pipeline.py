@@ -836,8 +836,7 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                 uncond_embeddings = uncond_embeddings.detach().clone().requires_grad_(True)
                 cond_embeddings = cond_embeddings.detach().clone().requires_grad_(False)
                 opt = torch.optim.Adam([uncond_embeddings], lr=1e-2 * (1. - i / 100.))
-                
-                with torch.enable_grad():lo
+                with torch.enable_grad():
                     for j in range(null_inner_steps):
                         context=torch.cat([uncond_embeddings, cond_embeddings])
                         self.unet.zero_grad()

@@ -116,7 +116,7 @@ if __name__=="__main__":
         )
 
 
-    pipeline.enable_xformers_memory_efficient_attention()
+    #pipeline.enable_xformers_memory_efficient_attention()
     
     
     tokenizer = pipeline.tokenizer

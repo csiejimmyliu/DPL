@@ -1,2 +1,4 @@
 output/
 test.ipynb
+__pycache__
+.vscode

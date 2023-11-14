@@ -8,7 +8,7 @@ FILE_NAME='catdog'
 CUDA_VISIBLE_DEVICES=0 python BG_estimate.py \
     --input_image ${IMG_FOLDER}/${FILE_NAME}.${IMG_FORMAT} \
     --results_folder output/ \
-    --use_float_16 \
+    #--use_float_16 \
 
 
 ### 2nd step: Dynamic Prompt Learning
@@ -61,4 +61,4 @@ CUDA_VISIBLE_DEVICES=0 python DPL.py \
     --smooth_op \
     --softmax_op \
     --seg_dirs output/${FILE_NAME}/sd_study/ \
-    --use_float_16 \
+    #--use_float_16 \

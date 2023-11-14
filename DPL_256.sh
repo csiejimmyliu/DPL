@@ -2,7 +2,7 @@
 ### 1st step: get the background mask and inversion files for DPL
 IMG_FORMAT='jpg'
 IMG_FOLDER='images/'
-FILE_NAME='catdog_256'
+dFILE_NAME='catdog_256'
 
 
 CUDA_VISIBLE_DEVICES=0 python BG_estimate.py \

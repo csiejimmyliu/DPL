@@ -157,7 +157,7 @@ class AttendExciteCrossAttnProcessor:
 
         is_cross = encoder_hidden_states is not None
         encoder_hidden_states = encoder_hidden_states if encoder_hidden_states is not None else hidden_states
-
+        #encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
         key = attn.to_k(encoder_hidden_states)
         value = attn.to_v(encoder_hidden_states)
 

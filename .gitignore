@@ -1,4 +1,6 @@
 output/
+output_gsam/
+
 test.ipynb
 __pycache__
 .vscode

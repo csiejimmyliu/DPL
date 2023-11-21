@@ -151,7 +151,6 @@ class AttentionStore:
         attention_maps = self.get_average_attention()
         for location in from_where:
             for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}_{element_name}"]:
-            
                 if item.shape[1] == num_pixels:
                     cross_maps = item.reshape(-1, res, res, item.shape[-1])
                     out.append(cross_maps)
@@ -590,11 +589,11 @@ class StableDiffusionDDIMInvPipeline(DiffusionPipeline):
 
             cross_att_count += 1
             attn_procs[name] = AttendExciteCrossAttnProcessor(
-                attnstore=self.attention_store, place_in_unet=place_in_unet
+                attnstore=self.pipeline_attention_store, place_in_unet=place_in_unet
             )
 
         self.unet.set_attn_processor(attn_procs)
-        self.attention_store.num_att_layers = cross_att_count
+        self.pipeline_attention_store.num_att_layers = cross_att_count
 
     
     @staticmethod    
@@ -660,7 +659,7 @@ class StableDiffusionDDIMInvPipeline(DiffusionPipeline):
         
         self.unet = prepare_unet(self.unet)
         
-        self.attention_store = AttentionStore()
+        self.pipeline_attention_store = AttentionStore()
         self.register_attention_control()
 
         
@@ -710,10 +709,10 @@ class StableDiffusionDDIMInvPipeline(DiffusionPipeline):
 
         for attn_size in [8,16,32,64]:
             for element_name in ['attn', 'feat', 'query', 'key', 'value']:
-                self_attn_avg = self.attention_store.aggregate_attention(from_where=("up", "down", "mid"), 
+                self_attn_avg = self.pipeline_attention_store.aggregate_attention(from_where=("up", "down", "mid"), 
                                                                         res=attn_size,is_cross=False,
                                                                         element_name=element_name)
-                cross_attn_avg = self.attention_store.aggregate_attention(from_where=("up", "down", "mid"), 
+                cross_attn_avg = self.pipeline_attention_store.aggregate_attention(from_where=("up", "down", "mid"), 
                                                                         res=attn_size,is_cross=True,
                                                                         element_name=element_name)   
                 
@@ -861,10 +860,10 @@ class StableDiffusionDDIMInvPipeline(DiffusionPipeline):
 
         for attn_size in [8,16,32,64]:
             for element_name in ['attn', 'feat', 'query', 'key', 'value']:
-                self_attn_avg = self.attention_store.aggregate_attention(from_where=("up", "down", "mid"), 
+                self_attn_avg = self.pipeline_attention_store.aggregate_attention(from_where=("up", "down", "mid"), 
                                                                         res=attn_size,is_cross=False,
                                                                         element_name=element_name)
-                cross_attn_avg = self.attention_store.aggregate_attention(from_where=("up", "down", "mid"), 
+                cross_attn_avg = self.pipeline_attention_store.aggregate_attention(from_where=("up", "down", "mid"), 
                                                                         res=attn_size,is_cross=True,
                                                                         element_name=element_name)   
                 

@@ -92,7 +92,7 @@ if __name__=="__main__":
         os.makedirs(os.path.join(_results_folder, "attn_inv"), exist_ok=True)
         os.makedirs(os.path.join(_results_folder, "attn_denoise"), exist_ok=True)
         bname = img_id
-        raw_image = Image.open(img_path).convert("RGB").resize((256, 256))
+        raw_image = Image.open(img_path).convert("RGB").resize((512, 512))
         #raw_image = Image.open(img_path).convert("RGB")
         if args.prompt_file is None and (not args.manual_prompt):
             prompt_file=os.path.join(_results_folder, f"prompt.txt")

@@ -92,7 +92,7 @@ if __name__=="__main__":
         os.makedirs(os.path.join(_results_folder, "attn_inv"), exist_ok=True)
         os.makedirs(os.path.join(_results_folder, "attn_denoise"), exist_ok=True)
         bname = img_id
-        raw_image = Image.open(img_path).convert("RGB").resize((256, 256))
+        raw_image = Image.open(img_path).convert("RGB").resize((512, 512))
         #raw_image = Image.open(img_path).convert("RGB")
         if args.prompt_file is None and (not args.manual_prompt):
             prompt_file=os.path.join(_results_folder, f"prompt.txt")
@@ -109,12 +109,15 @@ if __name__=="__main__":
 
         generator = torch.manual_seed(0)
         
+        #inversion
         all_latents, image, inv_self_avg_dict, inv_cross_avg_dict = pipeline(caption, 
                                                 image=raw_image, 
                                                 generator=generator,
                                                 )
         inv_latents = all_latents
         
+
+        #reconstruction
         image, denoise_self_avg_dict, denoise_cross_avg_dict = pipeline.reconstruct(
             caption,
             num_inference_steps=args.num_ddim_steps,
@@ -167,7 +170,7 @@ if __name__=="__main__":
                         draw_pca(inv_cross_avg_dict, resolution=RES, dict_key=KEY, 
                                 save_path=os.path.join(_results_folder, 'sd_study'),
                                 special_name='inv_cross')
-                    
+        #self segmentation            
         for RES in [32]:
             for KEY in ['attn']:
                 run_clusters(denoise_self_avg_dict, resolution=RES, dict_key=KEY, 
@@ -186,7 +189,7 @@ if __name__=="__main__":
                     run_clusters(inv_cross_avg_dict, resolution=RES, dict_key=KEY, 
                             save_path=os.path.join(_results_folder, 'sd_study'),
                             special_name='inv_cross')
-                
+        #cross attention  
         save_crossattn(img_path, caption, inv_cross_avg_dict, denoise_cross_avg_dict, _results_folder, RES=16)
 
         dict_key='attn'
@@ -196,7 +199,6 @@ if __name__=="__main__":
         
         tokenized_prompt = nltk.word_tokenize(caption)
         nouns = [(i, word) for (i, (word, pos)) in enumerate(nltk.pos_tag(tokenized_prompt)) if pos[:2] == 'NN']
-        print(nouns)
         for resolution in [32]:
                 npy_name=f'cluster_{dict_key}_{resolution}_{special_name}.npy'
                 save_path=os.path.join(_results_folder, 'sd_study')

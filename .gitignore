@@ -1,5 +1,6 @@
 output/
 output_gsam/
+output_test/
 
 test.ipynb
 __pycache__

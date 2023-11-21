@@ -126,8 +126,6 @@ if __name__=="__main__":
     
     initializer_token_id = token_ids
     placeholder_token_id = tokenizer.convert_tokens_to_ids(args.placeholder_token)    
-
-    
     text_encoder.resize_token_embeddings(len(tokenizer))
 
     

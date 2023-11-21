@@ -7,10 +7,9 @@ FILE_NAME='catdog'
 
 CUDA_VISIBLE_DEVICES=0 python BG_estimate.py \
     --input_image ${IMG_FOLDER}/${FILE_NAME}.${IMG_FORMAT} \
-    --results_folder output/ \
+    --results_folder output_test/ \
     --manual_prompt \
-    #--use_float_16 \
-
+    --run_pca \
 
 ### 2nd step: Dynamic Prompt Learning
 PLACEHOLDER1='<cat-toy>'
@@ -38,9 +37,10 @@ be_ATTN=0.3
 be_BG=0.7
 be_COSINE=0.9
 
+
 CUDA_VISIBLE_DEVICES=0 python DPL.py \
     --input_image ${IMG_FOLDER}/${FILE_NAME}.${IMG_FORMAT} \
-    --results_folder output/${FILE_NAME}/ \
+    --results_folder output_test/${FILE_NAME}/ \
     --negative_guidance_scale 7.5 \
     --null_inner_steps ${NULL_STEP} \
     --attn_inner_steps ${ATTN_STEP} \
@@ -61,5 +61,6 @@ CUDA_VISIBLE_DEVICES=0 python DPL.py \
     --attn_res ${ATTN_RES} \
     --smooth_op \
     --softmax_op \
-    --seg_dirs output/${FILE_NAME}/sd_study/ \
+    --seg_dirs output_test/${FILE_NAME}/sd_study/ \
     #--use_float_16 \
+

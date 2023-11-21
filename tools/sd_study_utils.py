@@ -124,7 +124,6 @@ def read_pkl(path,):
 def draw_pca(avg_dict, resolution, dict_key, save_path, special_name):
 
     RESOLUTION=resolution
-
     if avg_dict[dict_key][RESOLUTION].__len__() == 0:
         return 
     before_pca = avg_dict[dict_key][RESOLUTION].reshape(RESOLUTION*RESOLUTION,-1).cpu().numpy()

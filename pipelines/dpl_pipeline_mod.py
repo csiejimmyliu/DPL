@@ -33,8 +33,13 @@ from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 
 
-logger = logging.get_logger(__name__)  
+from torch.cuda.amp import GradScaler as GradScaler
+from torch.cuda.amp import autocast as autocast
 
+from accelerate import Accelerator
+
+logger = logging.get_logger(__name__)  
+scaler=GradScaler()
 
 @dataclass
 class Pix2PixInversionPipelineOutput(BaseOutput):
@@ -154,7 +159,7 @@ class AttendExciteCrossAttnProcessor:
 
         is_cross = encoder_hidden_states is not None
         encoder_hidden_states = encoder_hidden_states if encoder_hidden_states is not None else hidden_states
-
+        #encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
         key = attn.to_k(encoder_hidden_states)
         value = attn.to_v(encoder_hidden_states)
 
@@ -519,11 +524,11 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
 
             cross_att_count += 1
             attn_procs[name] = AttendExciteCrossAttnProcessor(
-                attnstore=self.attention_store, place_in_unet=place_in_unet
+                attnstore=self.pipeline_attention_store, place_in_unet=place_in_unet
             )
 
         self.unet.set_attn_processor(attn_procs)
-        self.attention_store.num_att_layers = cross_att_count
+        self.pipeline_attention_store.num_att_layers = cross_att_count
 
     @staticmethod
     def _compute_loss(max_attention_per_index: List[torch.Tensor], loss_type = 'max') -> torch.Tensor:
@@ -553,53 +558,6 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
         cos_dist = cos_sim[cos_mask].mean()
         return cos_dist
     
-    # @staticmethod    
-    # def _compute_cosine_adj(attention_maps: torch.Tensor,indices_to_alter: List[int], adj_indices_to_alter: List[int],):
-    #     x_attn = attention_maps[:,:,indices_to_alter].view(-1,len(indices_to_alter)).t()
-    #     x_attn_adj = attention_maps[:,:,adj_indices_to_alter].view(-1,len(adj_indices_to_alter)).t()
-
-    #     return 1.0 - (F.cosine_similarity(x_attn, x_attn_adj)).mean()
-    
-    # @staticmethod    
-    # def _compute_cosine_seg(attention_maps: torch.Tensor,indices_to_alter: List[int], seg_maps=None):
-    #     x_attn = attention_maps[:,:,indices_to_alter].view(-1,len(indices_to_alter)).t()
-    #     seg_maps_ = torch.cat(seg_maps).view(len(seg_maps),-1)
-    #     return 1.0 - (F.cosine_similarity(x_attn, seg_maps_)).mean()
-    
-    # @staticmethod    
-    # def _compute_IoU_loss(attention_maps: torch.Tensor,indices_to_alter: List[int], seg_maps=None):
-    #     x_attn = attention_maps[:,:,indices_to_alter].view(-1,len(indices_to_alter)).t()
-    #     seg_maps_ = torch.cat(seg_maps).view(len(seg_maps),-1)
-
-    #     length=len(seg_maps_)
-    #     loss_list=[(x_attn[i]*seg_maps_[i]).sum()/x_attn[i].sum() for i in range(length)]
-
-    #     return 1 - sum(loss_list)/float(length)
-    #     # return 1.0 - (x_attn*seg_maps_).sum()/x_attn.sum()
-    
-    # @staticmethod    
-    # def _compute_corner_loss(attention_maps: torch.Tensor,indices_to_alter: List[int], seg_maps=None, res=16):
-    #     x_attn = attention_maps[:,:,indices_to_alter].view(res,res,len(indices_to_alter)).permute(2,0,1)
-    #     seg_maps_ = torch.cat(seg_maps).view(len(seg_maps),res,res)
-    #     kl_criterion = torch.nn.KLDivLoss()
-
-    #     eps=1e-5
-    #     x_attn, seg_maps_ = x_attn + eps, seg_maps_+eps
-    #     x_attn_x, x_attn_y = x_attn.sum(1)/x_attn.sum(),x_attn.sum(2)/x_attn.sum()
-    #     seg_maps_x, seg_maps_y = seg_maps_.sum(1)/seg_maps_.sum(),seg_maps_.sum(2)/seg_maps_.sum()
-        
-    #     kl_loss = 0.5 * kl_criterion(x_attn_x.log(), seg_maps_x) + kl_criterion(x_attn_y.log(), seg_maps_y)
-
-    #     return kl_loss
-    
-    # @staticmethod    
-    # def _compute_cosine(attention_maps: torch.Tensor,indices_to_alter: List[int],):
-    #     x_attn = attention_maps[:,:,indices_to_alter].view(-1,len(indices_to_alter)).t()
-    #     cos_mask = torch.tril(torch.ones((len(indices_to_alter),len(indices_to_alter))),diagonal=-1).bool()
-    #     ### NOTE: broadcasting
-    #     cos_sim = F.cosine_similarity(x_attn[:,:,None], x_attn.t()[None,:,:])
-    #     cos_dist = cos_sim[cos_mask].mean()
-    #     return cos_dist
     
     def _aggregate_and_get_max_attention_per_token(
         self,
@@ -608,7 +566,7 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
         softmax_op = True,
     ):
         """Aggregates the attention for each token and computes the max activation value for each token to alter."""
-        attention_maps = self.attention_store.aggregate_attention(
+        attention_maps = self.pipeline_attention_store.aggregate_attention(
             from_where=("up", "down", "mid"),
         )
         
@@ -738,9 +696,9 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
 
         
         self.scheduler.set_timesteps(num_inference_steps, device=device)
+        #self.scheduler.set_timesteps(num_inference_steps, device='cpu')
         timesteps = self.scheduler.timesteps
 
-        
         
         num_channels_latents = self.unet.in_channels
         latents = self.prepare_latents(
@@ -760,9 +718,8 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
         
         
         self.unet = prepare_unet(self.unet)
-
         
-        self.attention_store = AttentionStore(attn_res=attn_res)
+        self.pipeline_attention_store = AttentionStore(attn_res=attn_res)
         self.register_attention_control()
 
         orig_embeds_params = (self.text_encoder).get_input_embeddings().weight.data.clone()
@@ -790,51 +747,76 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                 target_string=f"\n Step {i} Target max: {max_target_loss:0.6f}, " + \
                                     f"BG: {BG_target_loss:0.6f}, cos: {cos_target_loss:0.6f}," + \
                                         f"with lambda max {lam_maxattn:0.2f}, BG {lam_entropy:0.2f}, cos {lam_cosine:0.2f}"
-                print(target_string)     
+                print(target_string)    
+                
+                tuned_embedding=list(self.text_encoder.get_input_embeddings().parameters())[-2:]
 
+
+                #dpl loop
+                
                 with torch.enable_grad():
                     
-                    cond_optim = torch.optim.AdamW(self.text_encoder.get_input_embeddings().parameters())
+                    #cond_optim = torch.optim.AdamW(self.text_encoder.get_input_embeddings().parameters())
+                    cond_optim = torch.optim.AdamW(tuned_embedding)
                     for j in range(attn_inner_steps):
-                        encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float32)
-                        noise_pred = self.unet(latents,
-                                            t,
-                                            encoder_hidden_states=encoder_hidden_states,
-                                            cross_attention_kwargs=cross_attention_kwargs,
-                                            ).sample
-                        self.unet.zero_grad()
-                        
-                        max_attention_per_index, attention_maps = self._aggregate_and_get_max_attention_per_token(
-                                                                                    indices=token_indices,
-                                                                                    smooth_op=smooth_op,
-                                                                                    softmax_op=softmax_op)
+                        torch.cuda.empty_cache()
+                        cond_optim.zero_grad()
+                        #self.unet.zero_grad()
+                        #with autocast(enabled=True):
+                        with open('/home/jimmyliu/code/DPL/output/catdog_dpl/prompt.txt') as tempf:
+                            #float 16
+                            #encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float16)
+                            encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float32)
 
-                        
-                        if lam_maxattn>0:
-                            loss_max = self._compute_loss(max_attention_per_index, loss_type=loss_type)
-                        else:
-                            loss_max = torch.Tensor([0.0]).cuda()
-                        
-                        if i >= max_iter_to_alter and lam_entropy>0:
+                            #latents=latents.half()
+                            #t=t.half()
+                            #encoder_hidden_states=encoder_hidden_states.half()
+
+                            #print(latents.type())
+                            #print(t.type())
+                            #print(encoder_hidden_states.type())
+
+                            noise_pred = self.unet(latents,
+                                                t,
+                                                encoder_hidden_states=encoder_hidden_states,
+                                                cross_attention_kwargs=cross_attention_kwargs,
+                                                ).sample
+                            self.unet.zero_grad()
                             
+                            max_attention_per_index, attention_maps = self._aggregate_and_get_max_attention_per_token(
+                                                                                        indices=token_indices,
+                                                                                        smooth_op=smooth_op,
+                                                                                        softmax_op=softmax_op)
+
                             
-                            BG_loss = self._compute_BG(attention_maps, indices_to_alter, BG_maps)
-                        else:
-                            BG_loss = torch.Tensor([0.0]).cuda()
-                        
-                        if lam_cosine>0:
-                            cosine_loss = self._compute_cosine(attention_maps, indices_to_alter)
-                        else:  
-                            cosine_loss = torch.Tensor([0.0]).cuda()
+                            if lam_maxattn>0:
+                                loss_max = self._compute_loss(max_attention_per_index, loss_type=loss_type)
+                            else:
+                                loss_max = torch.Tensor([0.0]).cuda()
                             
-                        loss = loss_max* lam_maxattn+ BG_loss* lam_entropy \
-                                    + cosine_loss * lam_cosine 
+                            if i >= max_iter_to_alter and lam_entropy>0:
+                                
+                                BG_loss = self._compute_BG(attention_maps, indices_to_alter, BG_maps)
+                            else:
+                                BG_loss = torch.Tensor([0.0]).cuda()
+                            
+                            if lam_cosine>0:
+                                cosine_loss = self._compute_cosine(attention_maps, indices_to_alter)
+                            else:  
+                                cosine_loss = torch.Tensor([0.0]).cuda()
+                                
+                            loss = loss_max* lam_maxattn+ BG_loss* lam_entropy \
+                                        + cosine_loss * lam_cosine 
 
                         print_string = f"Step {i}, Attend {j} | Loss: {loss.item():0.6f}, " +\
                                                         f"max: {loss_max.item():0.6f}," + \
                                                         f"BG_loss: {BG_loss.item():0.6f}," +\
                                                         f"cosine: {cosine_loss.item():0.6f}, " 
-                                                        
+                        #print('loss')
+                        #torch.set_printoptions(precision=32)
+                        
+                        #print(loss.item())  
+                        #raise NotImplementedError                
                         if j%print_freq ==0:
                             print(print_string)
 
@@ -843,18 +825,22 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                             if j%print_freq !=0:
                                 print(print_string)
                             break
-
                         loss.backward(retain_graph=False)
+                        #scaler.scale(loss).backward(retain_graph=False)
+                        
+                        
                         cond_optim.step()
-                        cond_optim.zero_grad()
+                        #scaler.step(cond_optim)
+
+                        #scaler.update()
+                        
                         with torch.no_grad():
                             self.text_encoder.get_input_embeddings().weight[index_no_updates] = orig_embeds_params[index_no_updates]
-                            
-                
-
+                          
                 torch.cuda.empty_cache()
                 cond_embeds = self.text_encoder.get_input_embeddings().weight[placeholder_token_id]
                 cond_embeddings_list.append(cond_embeds.detach().cpu())
+                
                 attention_maps_list.append(attention_maps.detach().cpu())
 
                 prompt_embeds = self._encode_prompt(
@@ -870,46 +856,55 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                 
                 uncond_embeddings, cond_embeddings = prompt_embeds.chunk(2)
                 latent_prev = all_latents[len(all_latents) - i - 2]
-                
+
                 uncond_embeddings = uncond_embeddings.detach().clone().requires_grad_(True)
                 cond_embeddings = cond_embeddings.detach().clone().requires_grad_(False)
                 opt = torch.optim.Adam([uncond_embeddings], lr=1e-2 * (1. - i / 100.))
-                
                 with torch.enable_grad():
                     for j in range(null_inner_steps):
-                        context=torch.cat([uncond_embeddings, cond_embeddings])
-                        single_latent_model_input,_=latent_model_input.unbind(dim=0) 
-                        single_latent_model_input=single_latent_model_input.unsqueeze(dim=0)
-                        self.unet.zero_grad()
-                        
-                        
-                        # noise_pred = self.unet(latent_model_input,
-                        #                     t,
-                        #                     encoder_hidden_states=context,
-                        #                     cross_attention_kwargs=cross_attention_kwargs,
-                        #                     ).sample
-
-                        with torch.no_grad():
-                            noise_pred_text = self.unet(single_latent_model_input,
-                                                    t,
-                                                    encoder_hidden_states=cond_embeddings,
-                                                    cross_attention_kwargs=cross_attention_kwargs,
-                                                    ).sample
+                        torch.cuda.empty_cache()
+                        opt.zero_grad()
+                        with autocast():    
+                            context=torch.cat([uncond_embeddings, cond_embeddings])
+                            #single_latent_model_input,_=latent_model_input.unbind(dim=0) 
+                            #single_latent_model_input=single_latent_model_input.unsqueeze(dim=0)
+                            self.unet.zero_grad()
                             
-                        noise_pred_uncond = self.unet(single_latent_model_input,
+                            noise_pred = self.unet(latent_model_input,
                                                 t,
-                                                encoder_hidden_states=uncond_embeddings,
+                                                encoder_hidden_states=context,
                                                 cross_attention_kwargs=cross_attention_kwargs,
                                                 ).sample
-                        
-                        #noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                        noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
-                        latents_prev_rec = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).prev_sample
-                        loss = F.mse_loss(latents_prev_rec, latent_prev)
+                            # with torch.no_grad():
+                            #     noise_pred_text = self.unet(single_latent_model_input,
+                            #                         t,
+                            #                         encoder_hidden_states=cond_embeddings,
+                            #                         cross_attention_kwargs=cross_attention_kwargs,
+                            #                         ).sample
+                            
+                            
+                            
+                            # #self.unet.zero_grad()
+
+                            # noise_pred_uncond = self.unet(single_latent_model_input,
+                            #                         t,
+                            #                         encoder_hidden_states=uncond_embeddings,
+                            #                         cross_attention_kwargs=cross_attention_kwargs,
+                            #                         ).sample
+                            
+                            
+                            noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                            noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
+                            latents_prev_rec = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).prev_sample
+                            loss = F.mse_loss(latents_prev_rec, latent_prev)
 
                         loss.backward(retain_graph=False)
+                        #scaler.scale(loss).backward(retain_graph=False)
+                        
                         opt.step()
-                        opt.zero_grad()
+                        #scaler.step(opt)
+
+                        #scaler.update()
                                 
                         if j % print_freq == 0:
                             print(f'Step {i}, Null text loop {j} Loss: {loss.item():0.6f}')
@@ -921,12 +916,13 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
 
                 
                 with torch.no_grad():
-                    noise_pred = self.unet( 
-                                    latent_model_input,
-                                    t,
-                                    encoder_hidden_states=prompt_embeds,
-                                    cross_attention_kwargs=cross_attention_kwargs,
-                                    ).sample
+                    with autocast():
+                        noise_pred = self.unet( 
+                                        latent_model_input,
+                                        t,
+                                        encoder_hidden_states=prompt_embeds,
+                                        cross_attention_kwargs=cross_attention_kwargs,
+                                        ).sample
                 
                 
                 if do_classifier_free_guidance:
@@ -1040,37 +1036,41 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
 
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
-                
-                latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
-                latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+                with autocast():
+                    latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
+                    latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
-                
-                token_embeds = self.text_encoder.get_input_embeddings().weight.data
-                for ind in range(len(placeholder_token_id)):
-                    token_embeds[placeholder_token_id[ind]] = cond_embeddings_list[i][ind]
-                
-                encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float32)
-                
-                prompt_embeds = torch.cat([uncond_embeddings_list[i].cuda(), encoder_hidden_states.cuda()])
-                
-                noise_pred = self.unet( 
-                                    latent_model_input,
-                                    t,
-                                    encoder_hidden_states=prompt_embeds,
-                                    cross_attention_kwargs=cross_attention_kwargs,
-                                    ).sample
-                
-                
-                if do_classifier_free_guidance:
-                    noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                    noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
+                    
+                    token_embeds = self.text_encoder.get_input_embeddings().weight.data
+                    for ind in range(len(placeholder_token_id)):
+                        token_embeds[placeholder_token_id[ind]] = cond_embeddings_list[i][ind]
+                    
+                    #float 16
+                    #encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float16)
+                    encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float32)
+                    
+                    prompt_embeds = torch.cat([uncond_embeddings_list[i].cuda(), encoder_hidden_states.cuda()])
+                    #print(latent_model_input.type())
+                    #print(t.type())
+                    #print(prompt_embeds.type())
+                    noise_pred = self.unet( 
+                                        latent_model_input,
+                                        t,
+                                        encoder_hidden_states=prompt_embeds,
+                                        cross_attention_kwargs=cross_attention_kwargs,
+                                        ).sample
+                    
+                    
+                    if do_classifier_free_guidance:
+                        noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                        noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
-                
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).prev_sample
+                    
+                    latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).prev_sample
 
-                
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
-                    progress_bar.update()
+                    
+                    if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                        progress_bar.update()
 
         
         edited_image = self.decode_latents(latents)

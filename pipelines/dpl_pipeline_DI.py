@@ -895,7 +895,7 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                                                     encoder_hidden_states=cond_embeddings,
                                                     cross_attention_kwargs=cross_attention_kwargs,
                                                     ).sample
-                            
+                        self.unet.zero_grad()
                         noise_pred_uncond = self.unet(single_latent_model_input,
                                                 t,
                                                 encoder_hidden_states=uncond_embeddings,

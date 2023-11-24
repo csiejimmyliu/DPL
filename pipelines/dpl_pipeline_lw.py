@@ -792,9 +792,13 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                                         f"with lambda max {lam_maxattn:0.2f}, BG {lam_entropy:0.2f}, cos {lam_cosine:0.2f}"
                 print(target_string)     
 
+                #tuned_embedding=list(self.text_encoder.get_input_embeddings().parameters())[-2:]
+                tuned_embedding=[self.text_encoder.get_input_embeddings().parameters()[placeholder_token_idx] for placeholder_token_idx in placeholder_token_id ]
                 with torch.enable_grad():
                     
-                    cond_optim = torch.optim.AdamW(self.text_encoder.get_input_embeddings().parameters())
+                    #cond_optim = torch.optim.AdamW(self.text_encoder.get_input_embeddings().parameters())
+                    cond_optim = torch.optim.AdamW(tuned_embedding)
+
                     for j in range(attn_inner_steps):
                         encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float32)
                         noise_pred = self.unet(latents,
@@ -895,7 +899,7 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                                                     encoder_hidden_states=cond_embeddings,
                                                     cross_attention_kwargs=cross_attention_kwargs,
                                                     ).sample
-                            
+                        self.unet.zero_grad()
                         noise_pred_uncond = self.unet(single_latent_model_input,
                                                 t,
                                                 encoder_hidden_states=uncond_embeddings,

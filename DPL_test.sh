@@ -2,14 +2,14 @@
 ### 1st step: get the background mask and inversion files for DPL
 IMG_FORMAT='jpg'
 IMG_FOLDER='images/'
-FILE_NAME='catdog'
+FILE_NAME='catdog_sd14'
 
 
 CUDA_VISIBLE_DEVICES=0 python BG_estimate.py \
-    --input_image ${IMG_FOLDER}/${FILE_NAME}.${IMG_FORMAT} \
-    --results_folder output_test/ \
-    --manual_prompt \
-    --run_pca \
+   --input_image ${IMG_FOLDER}/${FILE_NAME}.${IMG_FORMAT} \
+   --results_folder output_test/ \
+   --manual_prompt \
+   #--run_pca \
 
 ### 2nd step: Dynamic Prompt Learning
 PLACEHOLDER1='<cat-toy>'

@@ -725,7 +725,6 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
             )
         text_input_ids = text_inputs.input_ids
 
-        
         prompt_embeds = self._encode_prompt(
             prompt,
             device,
@@ -791,12 +790,52 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                                     f"BG: {BG_target_loss:0.6f}, cos: {cos_target_loss:0.6f}," + \
                                         f"with lambda max {lam_maxattn:0.2f}, BG {lam_entropy:0.2f}, cos {lam_cosine:0.2f}"
                 print(target_string)     
+                emb_p=self.text_encoder.get_input_embeddings().parameters()
+                
+                
+                print('parameters')
+                
+                # for param in model.parameters():
+                    
+                    
+                #     print(param.requires_grad)
+                #     param.requires_grad=False
+                #     print(param.requires_grad)
+                    
 
+                # for param in model.parameters():
+
+                    
+                #     print(param.requires_grad)
+                    
+                
+                # for param in model.parameters():
+                    
+                #     for pparam in param:
+                #         print(pparam.requires_grad)
+                #         print(type(pparam))
+                #         pparam.requires_grad_(False)
+                #         print(pparam.requires_grad)
+                        
+
+                # for param in model.parameters():
+
+                #     for pparam in param:
+                #         print(pparam.requires_grad)
+                        
+
+                # raise NotImplementedError
+
+                #tuned_embedding=list(self.text_encoder.get_input_embeddings().parameters())[-2:]
+                #tuned_embedding=[list(self.text_encoder.get_input_embeddings().parameters())[0][placeholder_token_idx] for placeholder_token_idx in placeholder_token_id ]
                 with torch.enable_grad():
                     
                     cond_optim = torch.optim.AdamW(self.text_encoder.get_input_embeddings().parameters())
+                    #cond_optim = torch.optim.AdamW(tuned_embedding)
+
                     for j in range(attn_inner_steps):
                         encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float32)
+
                         noise_pred = self.unet(latents,
                                             t,
                                             encoder_hidden_states=encoder_hidden_states,
@@ -843,13 +882,24 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                             if j%print_freq !=0:
                                 print(print_string)
                             break
+                        
 
+                        print(self.text_encoder.get_input_embeddings().weight[49406][0])
+                        #print(self.text_encoder.get_input_embeddings().weight[placeholder_token_id][0][0])
                         loss.backward(retain_graph=False)
                         cond_optim.step()
                         cond_optim.zero_grad()
+                        #print(self.text_encoder.get_input_embeddings().weight[49406][0])
+                        #print(self.text_encoder.get_input_embeddings().weight[placeholder_token_id][0][0])
+                        
+
                         with torch.no_grad():
                             self.text_encoder.get_input_embeddings().weight[index_no_updates] = orig_embeds_params[index_no_updates]
+
                             
+                            #self.text_encoder.get_input_embeddings().weight[placeholder_token_id]=torch.stack(tuned_embedding)
+                            
+                raise NotImplementedError  
                 
 
                 torch.cuda.empty_cache()
@@ -895,7 +945,7 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                                                     encoder_hidden_states=cond_embeddings,
                                                     cross_attention_kwargs=cross_attention_kwargs,
                                                     ).sample
-                            
+                        self.unet.zero_grad()
                         noise_pred_uncond = self.unet(single_latent_model_input,
                                                 t,
                                                 encoder_hidden_states=uncond_embeddings,

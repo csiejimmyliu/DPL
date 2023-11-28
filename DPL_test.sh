@@ -3,12 +3,20 @@
 IMG_FORMAT='jpg'
 IMG_FOLDER='images/'
 FILE_NAME='catdog_sd14'
+LOSS_TIEM=$1
+if [[ $1 == "" ]]
+then
+  LOSS_TIEM='at_bg_dj'
+else
+  LOSS_TIEM=$1
+fi
 
 
 CUDA_VISIBLE_DEVICES=0 python BG_estimate.py \
    --input_image ${IMG_FOLDER}/${FILE_NAME}.${IMG_FORMAT} \
    --results_folder output_test/ \
    --manual_prompt \
+   --loss_item ${LOSS_TIEM}\
    #--run_pca \
 
 ### 2nd step: Dynamic Prompt Learning
@@ -40,7 +48,7 @@ be_COSINE=0.9
 
 CUDA_VISIBLE_DEVICES=0 python DPL.py \
     --input_image ${IMG_FOLDER}/${FILE_NAME}.${IMG_FORMAT} \
-    --results_folder output_test/${FILE_NAME}/ \
+    --results_folder output_test/${FILE_NAME}_${LOSS_TIEM}/ \
     --negative_guidance_scale 7.5 \
     --null_inner_steps ${NULL_STEP} \
     --attn_inner_steps ${ATTN_STEP} \
@@ -61,6 +69,7 @@ CUDA_VISIBLE_DEVICES=0 python DPL.py \
     --attn_res ${ATTN_RES} \
     --smooth_op \
     --softmax_op \
-    --seg_dirs output_test/${FILE_NAME}/sd_study/ \
+    --seg_dirs output_test/${FILE_NAME}_${LOSS_TIEM}/sd_study/ \
+    --loss_item ${LOSS_TIEM}\
     #--use_float_16 \
 

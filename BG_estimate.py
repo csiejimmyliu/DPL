@@ -31,14 +31,15 @@ def arguments():
     parser.add_argument('--run_pca', action='store_true')
     parser.add_argument('--no-run_pca', dest='run_pca', action='store_false')
     parser.set_defaults(run_pca=False)
+    # at bg dj
+    parser.add_argument('--loss_item', type=str, default='at_bg_dj')
 
     args = parser.parse_args()
     return args
 
 
 if __name__=="__main__":
-    args = arguments()
-    
+    args = arguments()    
     if args.use_float_16:
         torch_dtype = torch.float16
     else:
@@ -77,13 +78,26 @@ if __name__=="__main__":
         if os.path.isdir(args.input_image):
             search_text = img_path.split('/')[-2]
             img_id = img_path.split('/')[-1].split('.')[0]
-            _results_folder = os.path.join(args.results_folder, f"{search_text}_{img_id}")
+            _results_folder = os.path.join(args.results_folder, f"{search_text}_{img_id}_{args.loss_item}")
         elif os.path.isfile(args.input_image):
             img_id = img_path.split('/')[-1].split('.')[0]
             if args.search_text is None:
-                _results_folder = os.path.join(args.results_folder, f"{img_id}")
+                _results_folder = os.path.join(args.results_folder, f"{img_id}_{args.loss_item}")
             else:
-                _results_folder = os.path.join(args.results_folder, f"{args.search_text}_{img_id}")
+                _results_folder = os.path.join(args.results_folder, f"{args.search_text}_{img_id}_{args.loss_item}")
+
+    # for img_path in dirs[:]:
+    #     print(img_path)
+    #     if os.path.isdir(args.input_image):
+    #         search_text = img_path.split('/')[-2]
+    #         img_id = img_path.split('/')[-1].split('.')[0]
+    #         _results_folder = os.path.join(args.results_folder, f"{search_text}_{img_id}")
+    #     elif os.path.isfile(args.input_image):
+    #         img_id = img_path.split('/')[-1].split('.')[0]
+    #         if args.search_text is None:
+    #             _results_folder = os.path.join(args.results_folder, f"{img_id}")
+    #         else:
+    #             _results_folder = os.path.join(args.results_folder, f"{args.search_text}_{img_id}")
 
         print(_results_folder)
         os.makedirs(os.path.join(_results_folder, "sd_study"), exist_ok=True)

@@ -694,7 +694,8 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
         attn_res = 16, 
         smooth_op = True,  
         softmax_op = True, 
-        BG_maps=None
+        BG_maps=None,
+        loss_item=['at','bg','dj']
     ):
         
         indices_to_alter = token_indices
@@ -790,48 +791,10 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                                     f"BG: {BG_target_loss:0.6f}, cos: {cos_target_loss:0.6f}," + \
                                         f"with lambda max {lam_maxattn:0.2f}, BG {lam_entropy:0.2f}, cos {lam_cosine:0.2f}"
                 print(target_string)     
-                emb_p=self.text_encoder.get_input_embeddings().parameters()
-                
-                
-                print('parameters')
-                
-                # for param in model.parameters():
-                    
-                    
-                #     print(param.requires_grad)
-                #     param.requires_grad=False
-                #     print(param.requires_grad)
-                    
 
-                # for param in model.parameters():
-
-                    
-                #     print(param.requires_grad)
-                    
-                
-                # for param in model.parameters():
-                    
-                #     for pparam in param:
-                #         print(pparam.requires_grad)
-                #         print(type(pparam))
-                #         pparam.requires_grad_(False)
-                #         print(pparam.requires_grad)
-                        
-
-                # for param in model.parameters():
-
-                #     for pparam in param:
-                #         print(pparam.requires_grad)
-                        
-
-                # raise NotImplementedError
-
-                #tuned_embedding=list(self.text_encoder.get_input_embeddings().parameters())[-2:]
-                #tuned_embedding=[list(self.text_encoder.get_input_embeddings().parameters())[0][placeholder_token_idx] for placeholder_token_idx in placeholder_token_id ]
                 with torch.enable_grad():
                     
                     cond_optim = torch.optim.AdamW(self.text_encoder.get_input_embeddings().parameters())
-                    #cond_optim = torch.optim.AdamW(tuned_embedding)
 
                     for j in range(attn_inner_steps):
                         encoder_hidden_states = self.text_encoder(text_input_ids.to(device))[0].to(dtype=torch.float32)
@@ -849,19 +812,19 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                                                                                     softmax_op=softmax_op)
 
                         
-                        if lam_maxattn>0:
+                        if lam_maxattn>0 and 'at' in loss_item:
                             loss_max = self._compute_loss(max_attention_per_index, loss_type=loss_type)
                         else:
                             loss_max = torch.Tensor([0.0]).cuda()
                         
-                        if i >= max_iter_to_alter and lam_entropy>0:
+                        if i >= max_iter_to_alter and lam_entropy>0 and 'bg' in loss_item:
                             
                             
                             BG_loss = self._compute_BG(attention_maps, indices_to_alter, BG_maps)
                         else:
                             BG_loss = torch.Tensor([0.0]).cuda()
                         
-                        if lam_cosine>0:
+                        if lam_cosine>0 and 'dj' in loss_item:
                             cosine_loss = self._compute_cosine(attention_maps, indices_to_alter)
                         else:  
                             cosine_loss = torch.Tensor([0.0]).cuda()
@@ -884,22 +847,16 @@ class StableDiffusion_MyPipeline(DiffusionPipeline):
                             break
                         
 
-                        print(self.text_encoder.get_input_embeddings().weight[49406][0])
-                        #print(self.text_encoder.get_input_embeddings().weight[placeholder_token_id][0][0])
+
                         loss.backward(retain_graph=False)
                         cond_optim.step()
                         cond_optim.zero_grad()
-                        #print(self.text_encoder.get_input_embeddings().weight[49406][0])
-                        #print(self.text_encoder.get_input_embeddings().weight[placeholder_token_id][0][0])
                         
 
                         with torch.no_grad():
                             self.text_encoder.get_input_embeddings().weight[index_no_updates] = orig_embeds_params[index_no_updates]
 
-                            
-                            #self.text_encoder.get_input_embeddings().weight[placeholder_token_id]=torch.stack(tuned_embedding)
-                            
-                raise NotImplementedError  
+                             
                 
 
                 torch.cuda.empty_cache()

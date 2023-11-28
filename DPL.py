@@ -76,6 +76,8 @@ def arguments():
     
     parser.add_argument('--placeholder_token', nargs='+', type=str, default=['<cat-toy>','<dog-toy>'])
     parser.add_argument('--initializer_token', nargs='+', type=str, default=['cat','dog'])
+    # at bg dj
+    parser.add_argument('--loss_item', type=str, default='at_bg_dj')
     args = parser.parse_args()
     return args
 
@@ -214,6 +216,7 @@ if __name__=="__main__":
         smooth_op=args.smooth_op,
         softmax_op = args.softmax_op,
         BG_maps=BG_maps,
+        loss_item=args.loss_item,
     )
     with open(os.path.join(args.results_folder, 
             f"embed_list_{postfix}/{bname}_uncond.pkl"), 
